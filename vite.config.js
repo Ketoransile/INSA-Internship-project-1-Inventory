@@ -1,9 +1,8 @@
-
 import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 import federation from "@originjs/vite-plugin-federation";
-import path from 'path';
-import tailwindcss from '@tailwindcss/vite'
+import path from "path";
+import tailwindcss from "@tailwindcss/vite";
 export default defineConfig(({ mode }) => {
   const envDir = path.resolve(__dirname, "../");
   const localEnv = loadEnv(mode, envDir, "");
@@ -13,23 +12,28 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [
-      react(),   tailwindcss(),
+      react(),
+      tailwindcss(),
       federation({
         name: "userService", // Replace with your service name
         filename: "remoteEntry.js",
         remotes: {
-          shell: getEnvVar("SHELL_URL", "http://172.20.136.101:5000/dist/assets/remoteEntry.js"),
-          
+          shell: getEnvVar(
+            "SHELL_URL",
+            "http://172.20.136.101:5000/dist/assets/remoteEntry.js"
+          ),
         },
 
-              exposes: {
-        //Inventory components
-        './CreateInventoryCount': './src/components/Inventory/CreateInventoryCount',
-       
-      
-        
-      },
-            
+        exposes: {
+          //Inventory components
+          "./CreateInventoryCount":
+            "./src/components/Inventory/CreateInventoryCount",
+
+          // Fixed Asset Components
+          "./CreateFixedAssetTransfer":
+            "./src/components/FixedAssetTransfer/CreateFixedAssetTransfer",
+        },
+
         shared: [
           "react",
           "react-dom",
@@ -62,5 +66,3 @@ export default defineConfig(({ mode }) => {
     },
   };
 });
-
-
