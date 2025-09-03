@@ -24,17 +24,18 @@ import { useAtom } from "jotai";
 import { authAtom } from "shell/authAtom";
 import {
   getEmployees,
-  createInventoryCount,
   getItems,
   getStores,
-  getinventoryCountNumber,
+  getInventoryCountById,
+  updateInventoryCount,
 } from "../../api/inventoryApi";
+import { useParams, useNavigate } from "react-router-dom";
 import { v4 as uuidv4 } from "uuid";
 import Header from "../../common/Header";
-import { useNavigate } from "react-router-dom";
 import { Formik, FieldArray } from "formik";
 import * as yup from "yup";
 
+// ✅ Reuse the same schema as Create
 const validationSchema = yup.object().shape({
   storeId: yup.string().required("Store is required"),
   countDate: yup.date().required("Count Date is required").nullable(),
@@ -59,17 +60,19 @@ const validationSchema = yup.object().shape({
     .min(1, "At least one inventory item is required"),
 });
 
-export default function CreateInventoryCount() {
+export default function UpdateInventoryCount() {
+  const { id } = useParams();
   const navigate = useNavigate();
   const [authState] = useAtom(authAtom);
   const tenantId = authState.tenantId;
   const tenantName = authState.username || "";
 
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [employees, setEmployees] = useState([]);
   const [items, setItems] = useState([]);
   const [stores, setStores] = useState([]);
-  const [inventoryCountNumber, setInventoryCountNumber] = useState("");
+  const [initialValues, setInitialValues] = useState(null);
+
   const [notification, setNotification] = useState({
     open: false,
     message: "",
@@ -80,62 +83,84 @@ export default function CreateInventoryCount() {
   const budgetYearId = "3fa85f64-5717-4562-b3fc-2c963f66afa6";
 
   useEffect(() => {
-    if (!tenantId) return;
+    if (!tenantId || !id) return;
+
     async function fetchData() {
       try {
-        const [empRes, itemsRes, storeRes] = await Promise.all([
+        const [empRes, itemsRes, storeRes, countRes] = await Promise.all([
           getEmployees(tenantId),
           getItems(tenantId),
           getStores(tenantId),
+          getInventoryCountById(tenantId, id),
         ]);
+
         setEmployees(empRes.data);
         setItems(itemsRes.data);
         setStores(storeRes.data);
-      } catch {
+
+        const count = countRes.data;
+
+        setInitialValues({
+          storeId: count.storeId || "",
+          countDate: count.countDate || "",
+          committeeMembersId: count.committeeMembersId || [],
+          countType: count.countType || "PERIODIC",
+          storeType: count.storeType || "INTERNAL",
+          inventoryCountNumber: count.inventoryCountNumber || "",
+          inventoryItems: (count.inventoryDetails || []).map((d) => {
+            const matchedItem = itemsRes.data.find((i) => i.id === d.itemId);
+            return {
+              id: uuidv4(),
+              itemId: d.itemId,
+              itemCode: matchedItem?.itemCode || "",
+              quantity: d.quantity,
+              remark: d.remark || "",
+            };
+          }),
+        });
+      } catch (error) {
+        console.error(error);
         setNotification({
           open: true,
-          message: "Failed to fetch form data",
+          message: "Failed to load inventory count data",
           severity: "error",
         });
+      } finally {
+        setLoading(false);
       }
     }
-    fetchData();
-  }, [tenantId]);
 
-  useEffect(() => {
-    if (!tenantId) return;
-    const fetchNumber = async () => {
-      const res = await getinventoryCountNumber(tenantId);
-      setInventoryCountNumber(res.data.countNumber);
-    };
-    fetchNumber();
-  }, [tenantId]);
+    fetchData();
+  }, [tenantId, id]);
 
   const handleCloseSnackbar = () =>
     setNotification({ ...notification, open: false });
 
+  if (loading || !initialValues) {
+    return (
+      <Box m="20px">
+        <Header subtitle="Update Inventory Count" />
+        <Box textAlign="center" mt={10}>
+          <CircularProgress />
+          <Typography mt={2}>Loading Inventory Count...</Typography>
+        </Box>
+      </Box>
+    );
+  }
+
   return (
     <Box m="20px">
-      <Header subtitle="Create Inventory Count" />
+      <Header subtitle="Update Inventory Count" />
       <Formik
-        initialValues={{
-          storeId: "",
-          countDate: "",
-          committeeMembersId: [],
-          countType: "PERIODIC",
-          storeType: "INTERNAL",
-          inventoryItems: [
-            { id: uuidv4(), itemId: "", itemCode: "", quantity: 1, remark: "" },
-          ],
-        }}
+        initialValues={initialValues}
+        enableReinitialize
         validationSchema={validationSchema}
         onSubmit={async (values, { setSubmitting }) => {
           try {
-            setLoading(true);
             const payload = {
               storeId: values.storeId,
               committeeId,
-              inventoryCountNumber,
+              inventoryCountNumber: values.inventoryCountNumber,
               committeeMembersId: values.committeeMembersId,
               countType: values.countType,
               storeType: values.storeType,
@@ -149,25 +174,24 @@ export default function CreateInventoryCount() {
                 })
               ),
             };
-            console.log("payload", payload);
-            await createInventoryCount(tenantId, payload);
+
+            await updateInventoryCount(tenantId, id, payload);
             setNotification({
               open: true,
-              message: "Inventory Count Created Successfully",
+              message: "Inventory Count Updated Successfully",
               severity: "success",
             });
             setTimeout(() => {
               navigate(`/list-inventory-count`);
             }, 1000);
           } catch (error) {
-            console.log("error", error);
+            console.error(error);
             setNotification({
               open: true,
-              message: "Failed to create inventory count",
+              message: "Failed to update inventory count",
               severity: "error",
             });
           } finally {
-            setLoading(false);
             setSubmitting(false);
           }
         }}
@@ -180,6 +204,7 @@ export default function CreateInventoryCount() {
           handleBlur,
           handleSubmit,
           setFieldValue,
+          isSubmitting,
         }) => (
           <form onSubmit={handleSubmit}>
             <Grid container spacing={2}>
@@ -197,7 +222,7 @@ export default function CreateInventoryCount() {
               <Grid item xs={12} sm={6}>
                 <TextField
                   label="Inventory Count No"
-                  value={inventoryCountNumber}
+                  value={values.inventoryCountNumber}
                   disabled
                   fullWidth
                 />
@@ -443,13 +468,13 @@ export default function CreateInventoryCount() {
                 <Button
                   type="submit"
                   variant="contained"
-                  disabled={loading}
+                  disabled={isSubmitting}
                   fullWidth
                 >
-                  {loading ? (
+                  {isSubmitting ? (
                     <CircularProgress size={24} />
                   ) : (
-                    "Create Inventory Count"
+                    "Update Inventory Count"
                   )}
                 </Button>
               </Grid>
